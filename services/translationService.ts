@@ -243,7 +243,8 @@ function escapeRegExp(str: string): string {
 
 export function translateDescriptionToRu(englishText: string, categoryRu?: string): string {
   if (!englishText || englishText.length < 10) {
-    return categoryRu ? `${categoryRu} — компонент косметических средств` : 'Компонент косметических средств';
+    if (!categoryRu || categoryRu === 'Компонент') return 'Косметический компонент';
+    return `${categoryRu} — компонент косметических средств`;
   }
 
   let result = englishText;
@@ -267,6 +268,7 @@ export function translateDescriptionToRu(englishText: string, categoryRu?: strin
   }
 
   if (translated === englishText && categoryRu) {
+    if (categoryRu === 'Компонент') return 'Косметический компонент';
     return `${categoryRu} — компонент косметических средств`;
   }
 

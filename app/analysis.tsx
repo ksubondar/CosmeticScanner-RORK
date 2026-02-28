@@ -74,6 +74,11 @@ function IngredientRow({ item, expanded, onToggle }: {
   onToggle: () => void;
 }) {
   const dotColor = ingredientColorMap[item.color];
+  
+  // Унифицируем отображение категории
+  const displayCategory = item.categoryRu === 'Компонент — компонент косметических средств' 
+    ? 'Косметический компонент' 
+    : item.categoryRu;
 
   return (
     <TouchableOpacity
@@ -98,7 +103,7 @@ function IngredientRow({ item, expanded, onToggle }: {
         <View style={styles.ingredientDetails}>
           <View style={styles.detailTags}>
             <View style={[styles.detailTag, { backgroundColor: dotColor + '18' }]}>
-              <Text style={[styles.detailTagText, { color: dotColor }]}>{item.categoryRu}</Text>
+              <Text style={[styles.detailTagText, { color: dotColor }]}>{displayCategory}</Text>
             </View>
             {item.comedogenicity > 0 && (
               <View style={[styles.detailTag, { backgroundColor: item.comedogenicity >= 3 ? Colors.dangerBg : Colors.cautionBg }]}>

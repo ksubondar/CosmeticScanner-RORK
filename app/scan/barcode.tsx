@@ -9,7 +9,6 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
@@ -156,13 +155,13 @@ export default function BarcodeScreen() {
       );
     }
 
-    const screenWidth = Dimensions.get('window').width - 40;
-
     return (
-      <View style={[styles.cameraContainer, { width: screenWidth }]}>
+      <View style={styles.cameraContainer}>
         <CameraView
-          style={StyleSheet.absoluteFillObject}
+          style={styles.camera}
           facing="back"
+          onCameraReady={() => console.log('[Barcode] Camera ready')}
+          onMountError={(e) => console.log('[Barcode] Camera mount error:', e.message)}
           barcodeScannerSettings={{
             barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'],
           }}
@@ -202,13 +201,13 @@ export default function BarcodeScreen() {
         <View style={styles.backButton} />
       </View>
 
+      {renderCamera()}
+
       <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentInner}
         keyboardShouldPersistTaps="handled"
       >
-        {renderCamera()}
-
         {isSearching && (
           <View style={styles.searchingCard}>
             <ActivityIndicator size="small" color={Colors.primary} />
@@ -305,12 +304,16 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   cameraContainer: {
-    height: 250,
+    height: 260,
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 12,
     borderRadius: 16,
     overflow: 'hidden' as const,
-    marginBottom: 16,
-    position: 'relative' as const,
     backgroundColor: '#000',
+  },
+  camera: {
+    flex: 1,
   },
   cameraOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -318,7 +321,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cameraPlaceholder: {
-    height: 220,
+    height: 260,
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 12,
     backgroundColor: Colors.surface,
     borderRadius: 16,
     alignItems: 'center',
@@ -326,9 +332,6 @@ const styles = StyleSheet.create({
     gap: 12,
     borderWidth: 1,
     borderColor: Colors.border,
-    marginBottom: 16,
-    position: 'relative' as const,
-    overflow: 'hidden' as const,
   },
   scanFrame: {
     width: 200,

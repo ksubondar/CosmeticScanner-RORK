@@ -390,7 +390,7 @@ export default function ProfileScreen() {
                     <Text style={[
                       styles.devButtonText,
                       missingCount === 0 && styles.devButtonTextDisabled,
-                    ]}>Экспортировать</Text>
+                    ]}>Экспорт</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -604,10 +604,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dangerBg,
   },
   devButtonText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600' as const,
     color: Colors.primary,
-    flexShrink: 1,
   },
   devButtonTextDisabled: {
     color: Colors.textMuted,
