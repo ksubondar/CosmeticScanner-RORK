@@ -147,8 +147,6 @@ export function getRecommendations(ingredients: AnalyzedIngredient[], profile: U
 
   if (profile.preferences.includes('looking_for_spf') && tags.has('spf')) {
     recs.push('Вы искали SPF — солнцезащитные фильтры найдены');
-  } else if (profile.preferences.includes('looking_for_spf') && !tags.has('spf')) {
-    recs.push('Вы искали SPF — солнцезащитных фильтров в этом средстве нет');
   }
 
   return recs;

@@ -72,7 +72,8 @@ export default function PhotoScreen() {
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
-        quality: 0.8,
+        quality: 0.6,
+        exif: false,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -90,7 +91,8 @@ export default function PhotoScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 0.8,
+        quality: 0.6,
+        exif: false,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -117,9 +119,19 @@ export default function PhotoScreen() {
       const base64 = await getBase64FromUri(photoUri);
       console.log('[OCR] Got base64, length:', base64.length);
 
+      if (base64.length === 0) {
+        Alert.alert('Ошибка', 'Не удалось прочитать изображение. Попробуйте ещё раз.');
+        setIsRecognizing(false);
+        return;
+      }
+
       const imageDataUri = `data:image/jpeg;base64,${base64}`;
 
-      const result = await generateText({
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('OCR_TIMEOUT')), 60000);
+      });
+
+      const result = await Promise.race([generateText({
         messages: [
           {
             role: 'user',
@@ -142,7 +154,7 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
             ],
           },
         ],
-      });
+      }), timeoutPromise]);
 
       console.log('[OCR] AI result:', result.substring(0, 200));
 
@@ -182,11 +194,14 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
       setTimeout(() => {
         scrollRef.current?.scrollToEnd({ animated: true });
       }, 300);
-    } catch (error) {
+    } catch (error: unknown) {
       console.log('[OCR] Recognition error:', error);
+      const isTimeout = error instanceof Error && error.message === 'OCR_TIMEOUT';
       Alert.alert(
-        'Ошибка распознавания',
-        'Не удалось распознать текст. Попробуйте ещё раз или введите состав вручную.',
+        isTimeout ? 'Превышено время ожидания' : 'Ошибка распознавания',
+        isTimeout
+          ? 'Распознавание заняло слишком много времени. Попробуйте сделать более чёткое фото или введите состав вручную.'
+          : 'Не удалось распознать текст. Попробуйте ещё раз или введите состав вручную.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -291,7 +306,7 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
             <Image
               source={{ uri: photoUri }}
               style={styles.previewImage}
-              contentFit="cover"
+              contentFit="contain"
             />
             <View style={styles.previewActions}>
               <TouchableOpacity
@@ -494,9 +509,10 @@ const styles = StyleSheet.create({
   },
   previewImage: {
     width: '100%',
-    height: 220,
+    height: 280,
     borderRadius: 16,
     marginBottom: 12,
+    backgroundColor: Colors.surface,
   },
   previewActions: {
     flexDirection: 'row',

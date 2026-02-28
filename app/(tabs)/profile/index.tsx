@@ -589,8 +589,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 10,
+    paddingHorizontal: 10,
     borderRadius: 10,
     borderWidth: 1,
+    overflow: 'hidden' as const,
+    minHeight: 42,
   },
   devButtonExport: {
     borderColor: Colors.primary,
@@ -601,9 +604,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dangerBg,
   },
   devButtonText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600' as const,
     color: Colors.primary,
+    flexShrink: 1,
   },
   devButtonTextDisabled: {
     color: Colors.textMuted,

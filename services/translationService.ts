@@ -230,6 +230,17 @@ export function translateIngredientToEn(name: string): string {
   return trimmed;
 }
 
+function containsSignificantEnglish(text: string): boolean {
+  const words = text.split(/\s+/).filter(w => w.length > 2);
+  if (words.length === 0) return false;
+  const englishWords = words.filter(w => /^[a-zA-Z]+$/.test(w.replace(/[.,;:!?\-()[\]]/g, '')));
+  return englishWords.length / words.length > 0.4;
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function translateDescriptionToRu(englishText: string, categoryRu?: string): string {
   if (!englishText || englishText.length < 10) {
     return categoryRu ? `${categoryRu} — компонент косметических средств` : 'Компонент косметических средств';
@@ -240,12 +251,20 @@ export function translateDescriptionToRu(englishText: string, categoryRu?: strin
   const sortedTerms = Object.entries(enToRuTerms).sort((a, b) => b[0].length - a[0].length);
 
   for (const [en, ru] of sortedTerms) {
-    const regex = new RegExp(`\\b${en.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    const escaped = escapeRegExp(en);
+    const regex = new RegExp('\\b' + escaped + '\\b', 'gi');
     result = result.replace(regex, ru);
   }
 
   const sentences = result.split(/(?<=[.!?])\s+/);
   const translated = sentences.slice(0, 2).join(' ');
+
+  if (containsSignificantEnglish(translated)) {
+    if (categoryRu && categoryRu !== 'Компонент') {
+      return `${categoryRu} — компонент косметических средств`;
+    }
+    return 'Косметический компонент';
+  }
 
   if (translated === englishText && categoryRu) {
     return `${categoryRu} — компонент косметических средств`;

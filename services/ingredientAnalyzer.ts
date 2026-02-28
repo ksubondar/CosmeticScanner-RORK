@@ -274,14 +274,23 @@ export async function analyzeCompositionAsync(
     }
 
     const stillUnknown = unknownIndices.filter(idx => ingredients[idx].isUnknown);
+    const genericDescription = unknownIndices.filter(
+      idx => !ingredients[idx].isUnknown && (
+        ingredients[idx].descriptionRu === 'Косметический компонент' ||
+        ingredients[idx].descriptionRu.endsWith('— компонент косметических средств') ||
+        ingredients[idx].category === 'unknown'
+      )
+    );
     console.log('[Analyzer] Still unknown after external lookup:', stillUnknown.length);
+    console.log('[Analyzer] Generic description (no useful info):', genericDescription.length);
 
-    if (stillUnknown.length > 0) {
-      for (const idx of stillUnknown) {
+    const toCollect = [...stillUnknown, ...genericDescription];
+    if (toCollect.length > 0) {
+      for (const idx of toCollect) {
         const name = ingredientNames[idx];
         addMissingIngredient(name, productName).catch(() => {});
       }
-      console.log('[Analyzer] Added', stillUnknown.length, 'missing ingredients to collector');
+      console.log('[Analyzer] Added', toCollect.length, 'missing/generic ingredients to collector');
     }
   }
 

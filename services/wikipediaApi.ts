@@ -152,6 +152,11 @@ function buildWikiDescription(shortText: string, categoryRu: string, fullExtract
   if (lower.includes('firm') || lower.includes('elastic')) benefitPhrases.push('повышение упругости');
   if (lower.includes('cleansing') || lower.includes('cleanser')) benefitPhrases.push('очищение');
   if (lower.includes('exfoli')) benefitPhrases.push('отшелушивание');
+  if (lower.includes('emollient') || lower.includes('soften') || lower.includes('smooth')) benefitPhrases.push('смягчение кожи');
+  if (lower.includes('stabiliz') || lower.includes('stabilise')) benefitPhrases.push('стабилизация состава');
+  if (lower.includes('foaming') || lower.includes('lather')) benefitPhrases.push('пенообразование');
+  if (lower.includes('condition')) benefitPhrases.push('кондиционирование');
+  if (lower.includes('thicken') || lower.includes('viscosity')) benefitPhrases.push('загущение состава');
 
   if (benefitPhrases.length > 0) {
     const uniqueBenefits = [...new Set(benefitPhrases)].slice(0, 3);
@@ -161,6 +166,10 @@ function buildWikiDescription(shortText: string, categoryRu: string, fullExtract
   const translated = translateDescriptionToRu(shortText, categoryRu);
 
   if (translated.includes('используется в косметических средствах') && categoryRu !== 'Компонент') {
+    return `${categoryRu} — компонент косметических средств`;
+  }
+
+  if (categoryRu && categoryRu !== 'Компонент' && translated === 'Косметический компонент') {
     return `${categoryRu} — компонент косметических средств`;
   }
 

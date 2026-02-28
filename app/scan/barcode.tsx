@@ -8,6 +8,8 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  ScrollView,
+  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
@@ -154,10 +156,12 @@ export default function BarcodeScreen() {
       );
     }
 
+    const screenWidth = Dimensions.get('window').width - 40;
+
     return (
-      <View style={styles.cameraContainer}>
+      <View style={[styles.cameraContainer, { width: screenWidth }]}>
         <CameraView
-          style={styles.camera}
+          style={StyleSheet.absoluteFillObject}
           facing="back"
           barcodeScannerSettings={{
             barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'],
@@ -198,7 +202,11 @@ export default function BarcodeScreen() {
         <View style={styles.backButton} />
       </View>
 
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentInner}
+        keyboardShouldPersistTaps="handled"
+      >
         {renderCamera()}
 
         {isSearching && (
@@ -258,7 +266,7 @@ export default function BarcodeScreen() {
             <Text style={styles.alternativeButtonText}>📋 Ввести состав вручную</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -291,17 +299,18 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentInner: {
     padding: 20,
+    paddingBottom: 40,
   },
   cameraContainer: {
-    height: 220,
+    height: 250,
     borderRadius: 16,
     overflow: 'hidden' as const,
     marginBottom: 16,
     position: 'relative' as const,
-  },
-  camera: {
-    flex: 1,
+    backgroundColor: '#000',
   },
   cameraOverlay: {
     ...StyleSheet.absoluteFillObject,
