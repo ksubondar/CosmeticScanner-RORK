@@ -14,7 +14,6 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Camera, ImagePlus, FlaskConical, ScanText, Edit3 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { generateText } from '@rork-ai/toolkit-sdk';
@@ -23,47 +22,55 @@ import { useProfile } from '@/contexts/ProfileContext';
 import { useHistory } from '@/contexts/HistoryContext';
 import { analyzeCompositionAsync } from '@/services/ingredientAnalyzer';
 
-async function getResizedBase64(uri: string): Promise<string> {
-  if (uri.startsWith('data:')) {
-    const base64Part = uri.split(',')[1];
-    return base64Part || '';
+async function getOptimizedBase64(uri: string): Promise<string> {
+  console.log('[OCR] Getting optimized base64 for:', uri.substring(0, 50));
+
+  if (Platform.OS !== 'web') {
+    try {
+      const ImageManipulator = await import('expo-image-manipulator');
+      console.log('[OCR] Resizing image with ImageManipulator...');
+      const manipulated = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 1024 } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      );
+      console.log('[OCR] Image resized. Base64 length:', manipulated.base64?.length ?? 0);
+      if (manipulated.base64 && manipulated.base64.length > 0) {
+        return manipulated.base64;
+      }
+      console.log('[OCR] ImageManipulator base64 empty, falling back to file system read');
+    } catch (e) {
+      console.log('[OCR] ImageManipulator failed, falling back:', e);
+    }
+
+    try {
+      const { readAsStringAsync, EncodingType } = await import('expo-file-system/legacy');
+      const base64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });
+      console.log('[OCR] FileSystem base64 length:', base64.length);
+      return base64;
+    } catch (e) {
+      console.log('[OCR] FileSystem read failed:', e);
+      return '';
+    }
   }
 
   try {
-    console.log('[OCR] Resizing image with ImageManipulator...');
-    const result = await ImageManipulator.manipulateAsync(
-      uri,
-      [{ resize: { width: 1200 } }],
-      { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-    );
-    console.log('[OCR] Resized image, base64 length:', result.base64?.length || 0);
-    if (result.base64 && result.base64.length > 0) {
-      return result.base64;
-    }
-  } catch (error) {
-    console.log('[OCR] ImageManipulator error, using fallback:', error);
-  }
-
-  if (Platform.OS === 'web') {
     const response = await fetch(uri);
     const blob = await response.blob();
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const dataUrl = reader.result as string;
-        const base64 = dataUrl.split(',')[1];
+        const result = reader.result as string;
+        const base64 = result.split(',')[1];
         resolve(base64 || '');
       };
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
+  } catch (e) {
+    console.log('[OCR] Web base64 conversion failed:', e);
+    return '';
   }
-
-  const { readAsStringAsync, EncodingType } = await import('expo-file-system/legacy');
-  const base64 = await readAsStringAsync(uri, {
-    encoding: EncodingType.Base64,
-  });
-  return base64;
 }
 
 export default function PhotoScreen() {
@@ -76,6 +83,7 @@ export default function PhotoScreen() {
   const [productName, setProductName] = useState('');
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [ocrDone, setOcrDone] = useState(false);
+  const [ocrStatus, setOcrStatus] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
   const takePhoto = async () => {
@@ -88,7 +96,7 @@ export default function PhotoScreen() {
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
-        quality: 0.6,
+        quality: 0.85,
         exif: false,
       });
 
@@ -107,7 +115,7 @@ export default function PhotoScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        quality: 0.6,
+        quality: 0.85,
         exif: false,
       });
 
@@ -129,23 +137,30 @@ export default function PhotoScreen() {
     }
 
     setIsRecognizing(true);
+    setOcrStatus('Подготовка изображения...');
     console.log('[OCR] Starting text recognition...');
 
     try {
-      const base64 = await getResizedBase64(photoUri);
-      console.log('[OCR] Got base64, length:', base64.length);
+      const startTime = Date.now();
+
+      const base64 = await getOptimizedBase64(photoUri);
+      console.log('[OCR] Base64 ready, length:', base64.length, 'time:', Date.now() - startTime, 'ms');
 
       if (base64.length === 0) {
         Alert.alert('Ошибка', 'Не удалось прочитать изображение. Попробуйте ещё раз.');
         setIsRecognizing(false);
+        setOcrStatus('');
         return;
       }
 
+      setOcrStatus('Распознаю текст...');
       const imageDataUri = `data:image/jpeg;base64,${base64}`;
 
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('OCR_TIMEOUT')), 45000);
+        setTimeout(() => reject(new Error('OCR_TIMEOUT')), 90000);
       });
+
+      console.log('[OCR] Sending to AI, payload size:', Math.round(imageDataUri.length / 1024), 'KB');
 
       const result = await Promise.race([generateText({
         messages: [
@@ -158,12 +173,11 @@ export default function PhotoScreen() {
               },
               {
                 type: 'text',
-                text: `You are an expert at reading cosmetic product ingredient lists from packaging photos.
-Look at this image and extract the ingredients list.
-Return ONLY the comma-separated list of ingredients EXACTLY as they appear on the packaging, preserving the original language.
-Do NOT translate ingredient names. Do NOT add explanations, headers, or formatting.
+                text: `You are an expert at reading cosmetic product ingredient lists from photos.
+Look at this image carefully and extract the complete ingredients list.
+Return ONLY the raw comma-separated list of ingredients exactly as written on the package.
+Do NOT translate, rename, or modify any ingredient names - keep them exactly as they appear.
 If you can identify the product name, put it on the first line, then an empty line, then the ingredients.
-If you cannot read some ingredients clearly, return what you can read and mark unclear parts with [?].
 If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_FOUND`,
               },
             ],
@@ -171,7 +185,8 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
         ],
       }), timeoutPromise]);
 
-      console.log('[OCR] AI result:', result.substring(0, 200));
+      console.log('[OCR] AI result received, time:', Date.now() - startTime, 'ms');
+      console.log('[OCR] Result preview:', result.substring(0, 200));
 
       if (result.includes('NO_INGREDIENTS_FOUND')) {
         Alert.alert(
@@ -180,6 +195,7 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
           [{ text: 'OK' }]
         );
         setIsRecognizing(false);
+        setOcrStatus('');
         return;
       }
 
@@ -221,6 +237,7 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
       );
     } finally {
       setIsRecognizing(false);
+      setOcrStatus('');
     }
   };
 
@@ -302,7 +319,7 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
                 testID="take-photo-button"
               >
                 <Camera size={20} color={Colors.textInverse} />
-                <Text style={styles.photoButtonText}>Камера</Text>
+                <Text style={styles.photoButtonText}>Сделать фото</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.photoButton, styles.photoButtonSecondary]}
@@ -349,7 +366,7 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
                     <ScanText size={18} color={Colors.textInverse} />
                   )}
                   <Text style={styles.recognizeButtonText}>
-                    {isRecognizing ? 'Распознаю...' : 'Распознать текст'}
+                    {isRecognizing ? (ocrStatus || 'Распознаю...') : 'Распознать текст'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -485,8 +502,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500' as const,
     color: Colors.textSecondary,
-    textAlign: 'center' as const,
-    paddingHorizontal: 20,
   },
   photoHint: {
     fontSize: 12,
@@ -506,7 +521,6 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: Colors.primary,
     paddingVertical: 14,
-    paddingHorizontal: 12,
     borderRadius: 12,
   },
   photoButtonSecondary: {

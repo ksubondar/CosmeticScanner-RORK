@@ -121,8 +121,8 @@ export default function ProfileScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Экспорт', 'Файл скачан');
       } else {
-        const FileSystem = require('expo-file-system');
-        const Sharing = require('expo-sharing');
+        const FileSystem = await import('expo-file-system/legacy');
+        const Sharing = await import('expo-sharing');
         const fileName = `missing-ingredients-${new Date().toISOString().split('T')[0]}.json`;
         const filePath = `${FileSystem.documentDirectory}${fileName}`;
         await FileSystem.writeAsStringAsync(filePath, json);
@@ -177,8 +177,8 @@ export default function ProfileScreen() {
         URL.revokeObjectURL(url);
         Alert.alert('Экспорт', 'Файл скачан');
       } else {
-        const FileSystem = require('expo-file-system');
-        const Sharing = require('expo-sharing');
+        const FileSystem = await import('expo-file-system/legacy');
+        const Sharing = await import('expo-sharing');
         const fileName = `cosmetic-scanner-backup-${exportData.exportDate}.json`;
         const filePath = `${FileSystem.documentDirectory}${fileName}`;
         await FileSystem.writeAsStringAsync(filePath, JSON.stringify(exportData, null, 2));
@@ -197,7 +197,7 @@ export default function ProfileScreen() {
 
   const handleImport = useCallback(async () => {
     try {
-      const DocumentPicker = require('expo-document-picker');
+      const DocumentPicker = await import('expo-document-picker');
       const result = await DocumentPicker.getDocumentAsync({
         type: 'application/json',
         copyToCacheDirectory: true,
@@ -213,7 +213,7 @@ export default function ProfileScreen() {
         const response = await fetch(file.uri);
         content = await response.text();
       } else {
-        const FileSystem = require('expo-file-system');
+        const FileSystem = await import('expo-file-system/legacy');
         content = await FileSystem.readAsStringAsync(file.uri);
       }
 
@@ -390,7 +390,7 @@ export default function ProfileScreen() {
                     <Text style={[
                       styles.devButtonText,
                       missingCount === 0 && styles.devButtonTextDisabled,
-                    ]}>Экспорт</Text>
+                    ]}>Экспортировать</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -604,9 +604,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dangerBg,
   },
   devButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600' as const,
     color: Colors.primary,
+    flexShrink: 1,
   },
   devButtonTextDisabled: {
     color: Colors.textMuted,

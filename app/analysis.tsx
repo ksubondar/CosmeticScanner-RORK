@@ -75,10 +75,10 @@ function IngredientRow({ item, expanded, onToggle }: {
 }) {
   const dotColor = ingredientColorMap[item.color];
   
-  // Унифицируем отображение категории
+  // Унифицируем отображение категории для серых компонентов
   const displayCategory = item.categoryRu === 'Компонент — компонент косметических средств' 
     ? 'Косметический компонент' 
-    : item.categoryRu;
+    : (item.categoryRu || 'Косметический компонент');
 
   return (
     <TouchableOpacity
@@ -223,8 +223,11 @@ export default function AnalysisScreen() {
     const yellow = analysis.ingredients.filter(i => i.color === 'yellow').length;
     const red = analysis.ingredients.filter(i => i.color === 'red').length;
     const gray = analysis.ingredients.filter(i => i.color === 'gray').length;
-    const unknown = analysis.ingredients.filter(i => i.isUnknown).length;
-    return { total, green, yellow, red, gray, unknown };
+    
+    // Все серые считаем неизвестными, независимо от isUnknown
+    const unknown = gray;
+    
+    return { total, green, yellow, red, unknown };
   }, [analysis]);
 
   if (!analysis) {
@@ -304,15 +307,11 @@ export default function AnalysisScreen() {
               <Text style={[styles.statNumber, { color: Colors.danger }]}>{stats.red}</Text>
               <Text style={styles.statLabel}>Плохо</Text>
             </View>
-            {stats.unknown > 0 && (
-              <>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                  <Text style={[styles.statNumber, { color: Colors.marketing }]}>{stats.unknown}</Text>
-                  <Text style={styles.statLabel}>Неизвестно</Text>
-                </View>
-              </>
-            )}
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: Colors.marketing }]}>{stats.unknown}</Text>
+              <Text style={styles.statLabel}>Неизвестно</Text>
+            </View>
           </View>
         )}
 

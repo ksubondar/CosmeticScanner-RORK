@@ -9,17 +9,20 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, ScanBarcode, Search, Zap, Wifi, WifiOff } from 'lucide-react-native';
+import { ArrowLeft, ScanBarcode, Search, Zap, Wifi } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useProfile } from '@/contexts/ProfileContext';
 import { useHistory } from '@/contexts/HistoryContext';
 import { analyzeCompositionAsync } from '@/services/ingredientAnalyzer';
 import { lookupBarcode } from '@/services/openBeautyFacts';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function BarcodeScreen() {
   const router = useRouter();
@@ -31,6 +34,7 @@ export default function BarcodeScreen() {
   const [isSearching, setIsSearching] = useState(false);
   const [searchStatus, setSearchStatus] = useState('');
   const [permission, requestPermission] = useCameraPermissions();
+  const [cameraReady, setCameraReady] = useState(false);
   const processingRef = useRef(false);
 
   const handleBarcodeLookup = useCallback(async (code: string) => {
@@ -122,70 +126,17 @@ export default function BarcodeScreen() {
     handleBarcodeLookup(code);
   };
 
-  const renderCamera = () => {
-    if (Platform.OS === 'web') {
-      return (
-        <View style={styles.cameraPlaceholder}>
-          <ScanBarcode size={48} color={Colors.textMuted} />
-          <Text style={styles.cameraText}>Камера недоступна в веб-версии</Text>
-          <Text style={styles.cameraSubtext}>Используйте ручной ввод ниже</Text>
-        </View>
-      );
-    }
+  const onCameraReady = useCallback(() => {
+    console.log('[Barcode] Camera ready');
+    setCameraReady(true);
+  }, []);
 
-    if (!permission) {
-      return (
-        <View style={styles.cameraPlaceholder}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.cameraText}>Загрузка камеры...</Text>
-        </View>
-      );
-    }
+  const onMountError = useCallback((event: { message: string }) => {
+    console.log('[Barcode] Camera mount error:', event.message);
+    Alert.alert('Ошибка камеры', 'Не удалось запустить камеру. Используйте ручной ввод штрихкода.');
+  }, []);
 
-    if (!permission.granted) {
-      return (
-        <View style={styles.cameraPlaceholder}>
-          <ScanBarcode size={48} color={Colors.textMuted} />
-          <Text style={styles.cameraText}>Нужен доступ к камере</Text>
-          <Text style={styles.cameraSubtext}>Разрешите доступ к камере для сканирования штрихкодов</Text>
-          <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-            <Text style={styles.permissionButtonText}>Разрешить камеру</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.cameraContainer}>
-        <CameraView
-          style={styles.camera}
-          facing="back"
-          onCameraReady={() => console.log('[Barcode] Camera ready')}
-          onMountError={(e) => console.log('[Barcode] Camera mount error:', e.message)}
-          barcodeScannerSettings={{
-            barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'],
-          }}
-          onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-        />
-        <View style={styles.cameraOverlay}>
-          <View style={styles.scanFrame}>
-            <View style={[styles.corner, styles.cornerTL]} />
-            <View style={[styles.corner, styles.cornerTR]} />
-            <View style={[styles.corner, styles.cornerBL]} />
-            <View style={[styles.corner, styles.cornerBR]} />
-          </View>
-          {scanned ? (
-            <View style={styles.scannedBadge}>
-              <Zap size={16} color="#fff" />
-              <Text style={styles.scannedText}>Обработка...</Text>
-            </View>
-          ) : (
-            <Text style={styles.overlayHint}>Наведите камеру на штрихкод</Text>
-          )}
-        </View>
-      </View>
-    );
-  };
+  const showCamera = Platform.OS !== 'web' && permission?.granted && !isSearching;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -201,13 +152,70 @@ export default function BarcodeScreen() {
         <View style={styles.backButton} />
       </View>
 
-      {renderCamera()}
+      {showCamera && (
+        <View style={styles.cameraSection}>
+          <CameraView
+            style={styles.camera}
+            facing="back"
+            barcodeScannerSettings={{
+              barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'],
+            }}
+            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+            onCameraReady={onCameraReady}
+            onMountError={onMountError}
+          />
+          <View style={styles.cameraOverlay}>
+            <View style={styles.scanFrame}>
+              <View style={[styles.corner, styles.cornerTL]} />
+              <View style={[styles.corner, styles.cornerTR]} />
+              <View style={[styles.corner, styles.cornerBL]} />
+              <View style={[styles.corner, styles.cornerBR]} />
+            </View>
+            {scanned ? (
+              <View style={styles.scannedBadge}>
+                <Zap size={16} color="#fff" />
+                <Text style={styles.scannedText}>Обработка...</Text>
+              </View>
+            ) : (
+              <Text style={styles.overlayHint}>
+                {cameraReady ? 'Наведите камеру на штрихкод' : 'Запуск камеры...'}
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
 
       <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentInner}
+        style={styles.scrollSection}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
+        {Platform.OS === 'web' && (
+          <View style={styles.cameraPlaceholder}>
+            <ScanBarcode size={48} color={Colors.textMuted} />
+            <Text style={styles.cameraText}>Камера недоступна в веб-версии</Text>
+            <Text style={styles.cameraSubtext}>Используйте ручной ввод ниже</Text>
+          </View>
+        )}
+
+        {Platform.OS !== 'web' && !permission && (
+          <View style={styles.cameraPlaceholder}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.cameraText}>Загрузка камеры...</Text>
+          </View>
+        )}
+
+        {Platform.OS !== 'web' && permission && !permission.granted && (
+          <View style={styles.cameraPlaceholder}>
+            <ScanBarcode size={48} color={Colors.textMuted} />
+            <Text style={styles.cameraText}>Нужен доступ к камере</Text>
+            <Text style={styles.cameraSubtext}>Разрешите доступ к камере для сканирования штрихкодов</Text>
+            <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+              <Text style={styles.permissionButtonText}>Разрешить камеру</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {isSearching && (
           <View style={styles.searchingCard}>
             <ActivityIndicator size="small" color={Colors.primary} />
@@ -296,21 +304,11 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.text,
   },
-  content: {
-    flex: 1,
-  },
-  contentInner: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  cameraContainer: {
-    height: 260,
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 12,
-    borderRadius: 16,
-    overflow: 'hidden' as const,
+  cameraSection: {
+    width: SCREEN_WIDTH,
+    height: 280,
     backgroundColor: '#000',
+    position: 'relative' as const,
   },
   camera: {
     flex: 1,
@@ -321,10 +319,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cameraPlaceholder: {
-    height: 260,
-    marginHorizontal: 20,
-    marginTop: 12,
-    marginBottom: 12,
+    height: 220,
     backgroundColor: Colors.surface,
     borderRadius: 16,
     alignItems: 'center',
@@ -332,6 +327,7 @@ const styles = StyleSheet.create({
     gap: 12,
     borderWidth: 1,
     borderColor: Colors.border,
+    marginBottom: 16,
   },
   scanFrame: {
     width: 200,
@@ -417,6 +413,13 @@ const styles = StyleSheet.create({
     color: Colors.textInverse,
     fontSize: 14,
     fontWeight: '600' as const,
+  },
+  scrollSection: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
   },
   searchingCard: {
     flexDirection: 'row',

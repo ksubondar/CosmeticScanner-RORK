@@ -8,6 +8,7 @@
     "start-web-dev": "DEBUG=expo* bunx rork start -p 2sm69mu2c5pgmel6tgdra --web --tunnel",
     "lint": "expo lint"
   },
+  
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@nkzw/create-context-hook": "^1.1.0",
