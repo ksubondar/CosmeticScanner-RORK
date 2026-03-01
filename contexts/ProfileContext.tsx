@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
@@ -15,15 +14,18 @@ const defaultProfile: UserProfile = {
 
 export const [ProfileProvider, useProfile] = createContextHook(() => {
   const queryClient = useQueryClient();
-  const [profile, setProfile] = useState<UserProfile>(defaultProfile);
 
   const profileQuery = useQuery({
     queryKey: ['profile'],
     queryFn: async () => {
+      console.log('[Profile] Loading profile from AsyncStorage...');
       const stored = await AsyncStorage.getItem(PROFILE_KEY);
       if (stored) {
-        return JSON.parse(stored) as UserProfile;
+        const parsed = JSON.parse(stored) as UserProfile;
+        console.log('[Profile] Loaded. isOnboarded:', parsed.isOnboarded);
+        return parsed;
       }
+      console.log('[Profile] No stored profile, using default');
       return defaultProfile;
     },
   });
@@ -33,20 +35,16 @@ export const [ProfileProvider, useProfile] = createContextHook(() => {
       await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(newProfile));
       return newProfile;
     },
-    onSuccess: (data) => {
-      queryClient.setQueryData(['profile'], data);
+    onMutate: async (newProfile) => {
+      await queryClient.cancelQueries({ queryKey: ['profile'] });
+      queryClient.setQueryData(['profile'], newProfile);
     },
   });
 
-  useEffect(() => {
-    if (profileQuery.data) {
-      setProfile(profileQuery.data);
-    }
-  }, [profileQuery.data]);
+  const profile = profileQuery.data ?? defaultProfile;
 
   const updateProfile = (updates: Partial<UserProfile>) => {
     const updated = { ...profile, ...updates };
-    setProfile(updated);
     saveMutation.mutate(updated);
   };
 
@@ -76,7 +74,6 @@ export const [ProfileProvider, useProfile] = createContextHook(() => {
   };
 
   const resetProfile = () => {
-    setProfile(defaultProfile);
     saveMutation.mutate(defaultProfile);
   };
 

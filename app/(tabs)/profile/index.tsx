@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Download, Upload, RotateCcw, Shield, Heart, Leaf, Bug, Trash2, FileDown } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
@@ -67,6 +68,16 @@ export default function ProfileScreen() {
 
   const [devMode, setDevMode] = useState(false);
   const [devTapCount, setDevTapCount] = useState(0);
+  const devModeLoaded = useRef(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem('dev_mode_enabled').then(val => {
+      if (val === 'true') {
+        setDevMode(true);
+      }
+      devModeLoaded.current = true;
+    }).catch(() => {});
+  }, []);
   const [missingCount, setMissingCount] = useState(0);
   const [missingList, setMissingList] = useState<MissingIngredient[]>([]);
   const [loadingMissing, setLoadingMissing] = useState(false);
@@ -98,6 +109,7 @@ export default function ProfileScreen() {
     if (next >= DEV_TAP_COUNT) {
       if (!devMode) {
         setDevMode(true);
+        AsyncStorage.setItem('dev_mode_enabled', 'true').catch(() => {});
         if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert('Режим разработчика', 'Активирован');
       }

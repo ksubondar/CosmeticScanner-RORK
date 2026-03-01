@@ -9,6 +9,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,21 +23,48 @@ import { useProfile } from '@/contexts/ProfileContext';
 import { useHistory } from '@/contexts/HistoryContext';
 import { analyzeCompositionAsync } from '@/services/ingredientAnalyzer';
 
+function cleanOcrText(raw: string): string {
+  let text = raw;
+  text = text.replace(/\|/g, 'l');
+  text = text.replace(/Đ/g, 'D');
+  text = text.replace(/[{}[\]]/g, '');
+  text = text.replace(/(\w)-\s*\n\s*(\w)/g, '$1$2');
+  text = text.replace(/\n{3,}/g, '\n\n');
+  text = text.replace(/\s{3,}/g, ' ');
+  return text;
+}
+
 function parseOcrResult(rawText: string): { name: string; ingredients: string } {
   console.log('[OCR] Parsing OCR result, length:', rawText.length);
   console.log('[OCR] Raw text preview:', rawText.substring(0, 300));
 
+  const cleaned = cleanOcrText(rawText);
+
   const compositionMarkers = [
     /(?:ingredients|состав|composition|inci|성분)\s*[:：]/i,
+    /(?:ingredients|состав|composition|inci)\s*\n/i,
   ];
 
-  let ingredientText = rawText;
+  let ingredientText = cleaned;
 
   for (const marker of compositionMarkers) {
-    const match = rawText.match(marker);
+    const match = cleaned.match(marker);
     if (match && match.index !== undefined) {
-      ingredientText = rawText.substring(match.index + match[0].length).trim();
+      ingredientText = cleaned.substring(match.index + match[0].length).trim();
       console.log('[OCR] Found composition marker, extracting after it');
+      break;
+    }
+  }
+
+  const endMarkers = [
+    /(?:способ применения|directions|how to use|хранить при|storage conditions|срок годности|expiry|best before|произведено|made in|manufactured|не является лекарственным|условия хранения|apply to|массажными движениями)/i,
+  ];
+
+  for (const marker of endMarkers) {
+    const match = ingredientText.match(marker);
+    if (match && match.index !== undefined && match.index > 20) {
+      ingredientText = ingredientText.substring(0, match.index).trim();
+      console.log('[OCR] Found end marker, cutting text');
       break;
     }
   }
@@ -91,6 +119,14 @@ export default function PhotoScreen() {
 
   const pickImage = async () => {
     try {
+      if (Platform.OS !== 'web') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Ошибка', 'Нужен доступ к галерее. Разрешите доступ в настройках устройства.');
+          return;
+        }
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 0.85,
@@ -223,133 +259,146 @@ export default function PhotoScreen() {
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        {!photoUri ? (
-          <View style={styles.photoSection}>
-            <View style={styles.photoPlaceholder}>
-              <Camera size={48} color={Colors.textMuted} />
-              <Text style={styles.photoText}>
-                Сфотографируйте состав{"\n"}на упаковке
-              </Text>
-              <Text style={styles.photoHint}>
-                Для лучшего результата сделайте чёткое фото списка ингредиентов
-              </Text>
-            </View>
-            <View style={styles.photoButtons}>
-              <TouchableOpacity
-                style={styles.photoButton}
-                onPress={takePhoto}
-                testID="take-photo-button"
-              >
-                <Camera size={20} color={Colors.textInverse} />
-                <Text style={styles.photoButtonText}>Камера</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.photoButton, styles.photoButtonSecondary]}
-                onPress={pickImage}
-                testID="pick-image-button"
-              >
-                <ImagePlus size={20} color={Colors.primary} />
-                <Text style={[styles.photoButtonText, styles.photoButtonTextSecondary]}>
-                  Из галереи
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          {!photoUri ? (
+            <View style={styles.photoSection}>
+              <View style={styles.photoPlaceholder}>
+                <Camera size={48} color={Colors.textMuted} />
+                <Text style={styles.photoText}>
+                  Сфотографируйте состав{"\n"}на упаковке
                 </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.photoPreview}>
-            <Image
-              source={{ uri: photoUri }}
-              style={styles.previewImage}
-              contentFit="contain"
-            />
-            <View style={styles.previewActions}>
-              <TouchableOpacity
-                style={styles.retakeButton}
-                onPress={() => {
-                  setPhotoUri(null);
-                  setOcrDone(false);
-                  setIngredients('');
-                  setProductName('');
-                }}
-              >
-                <Text style={styles.retakeText}>Переснять</Text>
-              </TouchableOpacity>
-
-              {!ocrDone && (
+                <Text style={styles.photoHint}>
+                  Для лучшего результата сделайте чёткое фото списка ингредиентов
+                </Text>
+              </View>
+              <View style={styles.photoButtons}>
                 <TouchableOpacity
-                  style={[styles.recognizeButton, isRecognizing && styles.recognizeButtonDisabled]}
-                  onPress={recognizeText}
-                  disabled={isRecognizing}
-                  testID="recognize-button"
+                  style={styles.photoButton}
+                  onPress={takePhoto}
+                  testID="take-photo-button"
                 >
-                  {isRecognizing ? (
-                    <ActivityIndicator size="small" color={Colors.textInverse} />
-                  ) : (
-                    <ScanText size={18} color={Colors.textInverse} />
-                  )}
-                  <Text style={styles.recognizeButtonText}>
-                    {isRecognizing ? (ocrStatus || 'Распознаю...') : 'Распознать текст'}
+                  <Camera size={20} color={Colors.textInverse} />
+                  <Text style={styles.photoButtonText}>Камера</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.photoButton, styles.photoButtonSecondary]}
+                  onPress={pickImage}
+                  testID="pick-image-button"
+                >
+                  <ImagePlus size={20} color={Colors.primary} />
+                  <Text style={[styles.photoButtonText, styles.photoButtonTextSecondary]}>
+                    Из галереи
                   </Text>
                 </TouchableOpacity>
-              )}
+              </View>
             </View>
-          </View>
-        )}
+          ) : (
+            <View style={styles.photoPreview}>
+              <Image
+                source={{ uri: photoUri }}
+                style={styles.previewImage}
+                contentFit="contain"
+              />
+              <View style={styles.previewActions}>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={() => {
+                    setPhotoUri(null);
+                    setOcrDone(false);
+                    setIngredients('');
+                    setProductName('');
+                  }}
+                >
+                  <Text style={styles.retakeText}>Переснять</Text>
+                </TouchableOpacity>
 
-        {ocrDone && (
-          <View style={styles.ocrSuccessNote}>
-            <Text style={styles.ocrSuccessTitle}>✅ Текст распознан</Text>
-            <Text style={styles.ocrSuccessText}>
-              Проверьте и отредактируйте результат при необходимости
-            </Text>
-          </View>
-        )}
+                {!ocrDone && (
+                  <TouchableOpacity
+                    style={[styles.recognizeButton, isRecognizing && styles.recognizeButtonDisabled]}
+                    onPress={recognizeText}
+                    disabled={isRecognizing}
+                    testID="recognize-button"
+                  >
+                    {isRecognizing ? (
+                      <ActivityIndicator size="small" color={Colors.textInverse} />
+                    ) : (
+                      <ScanText size={18} color={Colors.textInverse} />
+                    )}
+                    <Text style={styles.recognizeButtonText}>
+                      {isRecognizing ? (ocrStatus || 'Распознаю...') : 'Распознать текст'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
 
-        {!photoUri && !ocrDone && (
-          <View style={styles.ocrNote}>
-            <Text style={styles.ocrNoteTitle}>💡 Как это работает</Text>
-            <Text style={styles.ocrNoteText}>
-              1. Сфотографируйте список ингредиентов на упаковке{'\n'}
-              2. Нажмите «Распознать текст» — ИИ прочитает состав{'\n'}
-              3. Проверьте результат и нажмите «Анализировать»
-            </Text>
-          </View>
-        )}
+          {ocrDone && (
+            <View style={styles.ocrSuccessNote}>
+              <Text style={styles.ocrSuccessTitle}>✅ Текст распознан</Text>
+              <Text style={styles.ocrSuccessText}>
+                Проверьте и отредактируйте результат при необходимости
+              </Text>
+            </View>
+          )}
 
-        <View style={styles.inputSection}>
-          <View style={styles.labelRow}>
-            <Text style={styles.label}>Название продукта</Text>
-            <Edit3 size={14} color={Colors.textMuted} />
-          </View>
-          <TextInput
-            style={styles.textInputSmall}
-            placeholder="Название..."
-            placeholderTextColor={Colors.textMuted}
-            value={productName}
-            onChangeText={setProductName}
-          />
+          {!photoUri && !ocrDone && (
+            <View style={styles.ocrNote}>
+              <Text style={styles.ocrNoteTitle}>💡 Как это работает</Text>
+              <Text style={styles.ocrNoteText}>
+                1. Сфотографируйте список ингредиентов на упаковке{'\n'}
+                2. Нажмите «Распознать текст» — ИИ прочитает состав{'\n'}
+                3. Проверьте результат и нажмите «Анализировать»
+              </Text>
+            </View>
+          )}
 
-          <View style={[styles.labelRow, { marginTop: 14 }]}>
-            <Text style={styles.label}>Состав</Text>
-            <Edit3 size={14} color={Colors.textMuted} />
+          <View style={styles.inputSection}>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Название продукта</Text>
+              <Edit3 size={14} color={Colors.textMuted} />
+            </View>
+            <TextInput
+              style={styles.textInputSmall}
+              placeholder="Название..."
+              placeholderTextColor={Colors.textMuted}
+              value={productName}
+              onChangeText={setProductName}
+            />
+
+            <View style={[styles.labelRow, { marginTop: 14 }]}>
+              <Text style={styles.label}>Состав</Text>
+              <Edit3 size={14} color={Colors.textMuted} />
+            </View>
+            <TextInput
+              style={styles.textInputLarge}
+              placeholder="Ингредиенты появятся здесь после распознавания или введите вручную..."
+              placeholderTextColor={Colors.textMuted}
+              value={ingredients}
+              onChangeText={setIngredients}
+              multiline
+              textAlignVertical="top"
+              onFocus={() => {
+                setTimeout(() => {
+                  scrollRef.current?.scrollToEnd({ animated: true });
+                }, 300);
+              }}
+            />
           </View>
-          <TextInput
-            style={styles.textInputLarge}
-            placeholder="Ингредиенты появятся здесь после распознавания или введите вручную..."
-            placeholderTextColor={Colors.textMuted}
-            value={ingredients}
-            onChangeText={setIngredients}
-            multiline
-            textAlignVertical="top"
-          />
-        </View>
-      </ScrollView>
+
+          <View style={styles.bottomPadding} />
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <TouchableOpacity
@@ -383,6 +432,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  keyboardAvoid: {
+    flex: 1,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -409,7 +461,9 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 40,
+  },
+  bottomPadding: {
+    height: 40,
   },
   photoSection: {
     marginBottom: 20,

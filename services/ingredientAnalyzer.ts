@@ -95,6 +95,10 @@ async function lookupExternalSources(name: string): Promise<IngredientData | nul
   return null;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function calculateOverallRating(ingredients: AnalyzedIngredient[]): { rating: OverallRating; text: string } {
   const total = ingredients.length;
   const unknownCount = ingredients.filter(i => i.isUnknown).length;
@@ -102,6 +106,11 @@ function calculateOverallRating(ingredients: AnalyzedIngredient[]): { rating: Ov
 
   if (known.length === 0) {
     return { rating: 'gray', text: 'Недостаточно данных' };
+  }
+
+  const unknownRatio = unknownCount / total;
+  if (unknownRatio > 0.6) {
+    return { rating: 'gray', text: 'Неизвестно' };
   }
 
   const redCount = known.filter(i => i.color === 'red').length;
@@ -239,6 +248,7 @@ export async function analyzeCompositionAsync(
 
     if (onProgress) {
       onProgress(i + 1, totalCount);
+      await delay(25);
     }
   }
 
@@ -246,31 +256,26 @@ export async function analyzeCompositionAsync(
   console.log('[Analyzer] Unknown locally:', unknownIndices.length);
 
   if (unknownIndices.length > 0) {
-    const BATCH_SIZE = 5;
-    let externalProcessed = 0;
+    for (let i = 0; i < unknownIndices.length; i++) {
+      const idx = unknownIndices[i];
+      const name = ingredientNames[idx];
+      const englishName = isCyrillic(name) ? translateIngredientToEn(name) : name;
 
-    for (let b = 0; b < unknownIndices.length; b += BATCH_SIZE) {
-      const batch = unknownIndices.slice(b, b + BATCH_SIZE);
-
-      const results = await Promise.allSettled(
-        batch.map(idx => {
-          const name = ingredientNames[idx];
-          const englishName = isCyrillic(name) ? translateIngredientToEn(name) : name;
-          return lookupExternalSources(englishName);
-        })
-      );
-
-      results.forEach((res, i) => {
-        const idx = batch[i];
-        if (res.status === 'fulfilled' && res.value) {
+      try {
+        const externalData = await lookupExternalSources(englishName);
+        if (externalData) {
           const original = originalNames[idx];
-          ingredients[idx] = buildAnalyzedIngredient(original, res.value, profile);
+          ingredients[idx] = buildAnalyzedIngredient(original, externalData, profile);
         }
-        externalProcessed++;
-        if (onProgress) {
-          onProgress(totalCount - unknownIndices.length + externalProcessed, totalCount);
-        }
-      });
+      } catch (e) {
+        console.log('[Analyzer] External lookup error for:', name, e);
+      }
+
+      if (onProgress) {
+        const localFound = ingredientNames.length - unknownIndices.length;
+        onProgress(localFound + i + 1, totalCount);
+        await delay(25);
+      }
     }
 
     const stillUnknown = unknownIndices.filter(idx => ingredients[idx].isUnknown);
