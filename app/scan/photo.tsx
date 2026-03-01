@@ -16,61 +16,39 @@ import { ArrowLeft, Camera, ImagePlus, FlaskConical, ScanText, Edit3 } from 'luc
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import TextRecognition from '@react-native-ml-kit/text-recognition';
 import Colors from '@/constants/colors';
 import { useProfile } from '@/contexts/ProfileContext';
 import { useHistory } from '@/contexts/HistoryContext';
 import { analyzeCompositionAsync } from '@/services/ingredientAnalyzer';
 
-async function getOptimizedBase64(uri: string): Promise<string> {
-  console.log('[OCR] Getting optimized base64 for:', uri.substring(0, 50));
+function parseOcrResult(rawText: string): { name: string; ingredients: string } {
+  console.log('[OCR] Parsing OCR result, length:', rawText.length);
+  console.log('[OCR] Raw text preview:', rawText.substring(0, 300));
 
-  if (Platform.OS !== 'web') {
-    try {
-      const ImageManipulator = await import('expo-image-manipulator');
-      console.log('[OCR] Resizing image with ImageManipulator...');
-      const manipulated = await ImageManipulator.manipulateAsync(
-        uri,
-        [{ resize: { width: 1024 } }],
-        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-      );
-      console.log('[OCR] Image resized. Base64 length:', manipulated.base64?.length ?? 0);
-      if (manipulated.base64 && manipulated.base64.length > 0) {
-        return manipulated.base64;
-      }
-      console.log('[OCR] ImageManipulator base64 empty, falling back to file system read');
-    } catch (e) {
-      console.log('[OCR] ImageManipulator failed, falling back:', e);
-    }
+  const compositionMarkers = [
+    /(?:ingredients|состав|composition|inci|성분)\s*[:：]/i,
+  ];
 
-    try {
-      const { readAsStringAsync, EncodingType } = await import('expo-file-system/legacy');
-      const base64 = await readAsStringAsync(uri, { encoding: EncodingType.Base64 });
-      console.log('[OCR] FileSystem base64 length:', base64.length);
-      return base64;
-    } catch (e) {
-      console.log('[OCR] FileSystem read failed:', e);
-      return '';
+  let ingredientText = rawText;
+
+  for (const marker of compositionMarkers) {
+    const match = rawText.match(marker);
+    if (match && match.index !== undefined) {
+      ingredientText = rawText.substring(match.index + match[0].length).trim();
+      console.log('[OCR] Found composition marker, extracting after it');
+      break;
     }
   }
 
-  try {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    return new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        const base64 = result.split(',')[1];
-        resolve(base64 || '');
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (e) {
-    console.log('[OCR] Web base64 conversion failed:', e);
-    return '';
-  }
+  ingredientText = ingredientText
+    .replace(/\n+/g, ', ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/,\s*,/g, ',')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
+    .trim();
+
+  return { name: '', ingredients: ingredientText };
 }
 
 export default function PhotoScreen() {
@@ -136,70 +114,28 @@ export default function PhotoScreen() {
       return;
     }
 
+    if (Platform.OS === 'web') {
+      Alert.alert('Недоступно', 'OCR через ML Kit работает только на устройстве (Android/iOS). На веб введите состав вручную.');
+      return;
+    }
+
     setIsRecognizing(true);
-    setOcrStatus('Подготовка изображения...');
-    console.log('[OCR] Starting text recognition...');
+    setOcrStatus('Распознаю текст...');
+    console.log('[OCR] Starting ML Kit text recognition...');
 
     try {
       const startTime = Date.now();
 
-      const base64 = await getOptimizedBase64(photoUri);
-      console.log('[OCR] Base64 ready, length:', base64.length, 'time:', Date.now() - startTime, 'ms');
+      const result = await TextRecognition.recognize(photoUri);
+      console.log('[OCR] ML Kit result received, time:', Date.now() - startTime, 'ms');
+      console.log('[OCR] Recognized text length:', result.text.length);
+      console.log('[OCR] Blocks count:', result.blocks.length);
+      console.log('[OCR] Text preview:', result.text.substring(0, 300));
 
-      if (base64.length === 0) {
-        Alert.alert('Ошибка', 'Не удалось прочитать изображение. Попробуйте ещё раз.');
-        setIsRecognizing(false);
-        setOcrStatus('');
-        return;
-      }
-
-      setOcrStatus('Распознаю текст...');
-      const imageDataUri = `data:image/jpeg;base64,${base64}`;
-
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('OCR_TIMEOUT')), 90000);
-      });
-
-      console.log('[OCR] Sending to AI, payload size:', Math.round(imageDataUri.length / 1024), 'KB');
-
-      const result = await Promise.race([generateText({
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                image: imageDataUri,
-              },
-              {
-                type: 'text',
-                text: `You are an expert OCR system specialized in reading cosmetic product ingredient lists from photos.
-
-INSTRUCTIONS:
-1. Look at this image very carefully and find the ingredients/composition list.
-2. The text may be in ANY language (Russian, English, French, Korean, etc.) - read it as-is.
-3. Extract ALL ingredients exactly as printed on the package - preserve the original language and spelling.
-4. Return a comma-separated list of ingredients.
-5. If you can identify the product name, put it on the FIRST line, then leave an empty line, then list all ingredients separated by commas.
-6. Do NOT translate, rename, paraphrase or modify any ingredient names.
-7. Do NOT skip any ingredients - include every single one even if hard to read.
-8. If the text is blurry, do your best to read it and include your best guess.
-9. If the image does not contain any ingredient/composition list at all, respond with exactly: NO_INGREDIENTS_FOUND
-
-Common label markers to look for: "Ingredients:", "Состав:", "Composition:", "INCI:", "성분"`,
-              },
-            ],
-          },
-        ],
-      }), timeoutPromise]);
-
-      console.log('[OCR] AI result received, time:', Date.now() - startTime, 'ms');
-      console.log('[OCR] Result preview:', result.substring(0, 200));
-
-      if (result.includes('NO_INGREDIENTS_FOUND')) {
+      if (!result.text || result.text.trim().length < 3) {
         Alert.alert(
           'Не удалось распознать',
-          'На фото не найден список ингредиентов. Попробуйте сделать более чёткое фото или введите состав вручную.',
+          'На фото не найден текст. Попробуйте сделать более чёткое фото или введите состав вручную.',
           [{ text: 'OK' }]
         );
         setIsRecognizing(false);
@@ -207,40 +143,24 @@ Common label markers to look for: "Ingredients:", "Состав:", "Composition:
         return;
       }
 
-      const lines = result.trim().split('\n').filter((l: string) => l.trim().length > 0);
+      const parsed = parseOcrResult(result.text);
 
-      if (lines.length >= 2) {
-        const firstLine = lines[0].trim();
-        const hasComma = firstLine.includes(',');
-        const isLikelyName = !hasComma && firstLine.length < 100;
-
-        if (isLikelyName) {
-          setProductName(firstLine);
-          setIngredients(lines.slice(1).join(', ').trim());
-        } else {
-          setIngredients(lines.join(', ').trim());
-        }
-      } else {
-        setIngredients(result.trim());
+      if (parsed.name) {
+        setProductName(parsed.name);
       }
-
+      setIngredients(parsed.ingredients);
       setOcrDone(true);
 
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       setTimeout(() => {
         scrollRef.current?.scrollToEnd({ animated: true });
       }, 300);
     } catch (error: unknown) {
-      console.log('[OCR] Recognition error:', error);
-      const isTimeout = error instanceof Error && error.message === 'OCR_TIMEOUT';
+      console.log('[OCR] ML Kit recognition error:', error);
       Alert.alert(
-        isTimeout ? 'Превышено время ожидания' : 'Ошибка распознавания',
-        isTimeout
-          ? 'Распознавание заняло слишком много времени. Попробуйте сделать более чёткое фото или введите состав вручную.'
-          : 'Не удалось распознать текст. Попробуйте ещё раз или введите состав вручную.',
+        'Ошибка распознавания',
+        'Не удалось распознать текст. Попробуйте ещё раз или введите состав вручную.',
         [{ text: 'OK' }]
       );
     } finally {
