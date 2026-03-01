@@ -173,12 +173,20 @@ export default function PhotoScreen() {
               },
               {
                 type: 'text',
-                text: `You are an expert at reading cosmetic product ingredient lists from photos.
-Look at this image carefully and extract the complete ingredients list.
-Return ONLY the raw comma-separated list of ingredients exactly as written on the package.
-Do NOT translate, rename, or modify any ingredient names - keep them exactly as they appear.
-If you can identify the product name, put it on the first line, then an empty line, then the ingredients.
-If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_FOUND`,
+                text: `You are an expert OCR system specialized in reading cosmetic product ingredient lists from photos.
+
+INSTRUCTIONS:
+1. Look at this image very carefully and find the ingredients/composition list.
+2. The text may be in ANY language (Russian, English, French, Korean, etc.) - read it as-is.
+3. Extract ALL ingredients exactly as printed on the package - preserve the original language and spelling.
+4. Return a comma-separated list of ingredients.
+5. If you can identify the product name, put it on the FIRST line, then leave an empty line, then list all ingredients separated by commas.
+6. Do NOT translate, rename, paraphrase or modify any ingredient names.
+7. Do NOT skip any ingredients - include every single one even if hard to read.
+8. If the text is blurry, do your best to read it and include your best guess.
+9. If the image does not contain any ingredient/composition list at all, respond with exactly: NO_INGREDIENTS_FOUND
+
+Common label markers to look for: "Ingredients:", "Состав:", "Composition:", "INCI:", "성분"`,
               },
             ],
           },
@@ -306,7 +314,7 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
             <View style={styles.photoPlaceholder}>
               <Camera size={48} color={Colors.textMuted} />
               <Text style={styles.photoText}>
-                Сфотографируйте состав на упаковке
+                Сфотографируйте состав{"\n"}на упаковке
               </Text>
               <Text style={styles.photoHint}>
                 Для лучшего результата сделайте чёткое фото списка ингредиентов
@@ -319,7 +327,7 @@ If the image does not contain any ingredient list, respond with: NO_INGREDIENTS_
                 testID="take-photo-button"
               >
                 <Camera size={20} color={Colors.textInverse} />
-                <Text style={styles.photoButtonText}>Сделать фото</Text>
+                <Text style={styles.photoButtonText}>Камера</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.photoButton, styles.photoButtonSecondary]}
@@ -497,17 +505,19 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderStyle: 'dashed',
     marginBottom: 12,
+    paddingHorizontal: 24,
   },
   photoText: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: Colors.textSecondary,
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    textAlign: 'center',
   },
   photoHint: {
     fontSize: 12,
     color: Colors.textMuted,
     textAlign: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 16,
   },
   photoButtons: {
     flexDirection: 'row',

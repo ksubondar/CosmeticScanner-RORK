@@ -1,16 +1,16 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Animated,
+  Platform,
 } from 'react-native';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScanBarcode, Camera, ClipboardPaste, Sparkles, FlaskConical } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { Platform } from 'react-native';
 import Colors from '@/constants/colors';
 import { useProfile } from '@/contexts/ProfileContext';
 import { getIngredientCount } from '@/constants/ingredientsDB';
@@ -74,16 +74,18 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { profile, isLoading } = useProfile();
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!isLoading && !profile.isOnboarded) {
+      router.replace('/onboarding');
+    }
+  }, [isLoading, profile.isOnboarded, router]);
+
+  if (isLoading || !profile.isOnboarded) {
     return (
       <View style={[styles.container, styles.center]}>
         <Text style={styles.loadingText}>Загрузка...</Text>
       </View>
     );
-  }
-
-  if (!profile.isOnboarded) {
-    return <Redirect href="/onboarding" />;
   }
 
   const handlePress = (route: string) => {

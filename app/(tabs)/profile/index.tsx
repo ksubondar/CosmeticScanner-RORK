@@ -9,8 +9,9 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { User, Download, Upload, RotateCcw, Shield, Heart, Leaf, Bug, Trash2, FileDown } from 'lucide-react-native';
+import { Download, Upload, RotateCcw, Shield, Heart, Leaf, Bug, Trash2, FileDown } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 import { useProfile } from '@/contexts/ProfileContext';
@@ -59,6 +60,7 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
 const DEV_TAP_COUNT = 7;
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { profile, toggleSkinType, toggleConcern, togglePreference, resetProfile, updateProfile } = useProfile();
   const { history, importHistory } = useHistory();
@@ -68,12 +70,6 @@ export default function ProfileScreen() {
   const [missingCount, setMissingCount] = useState(0);
   const [missingList, setMissingList] = useState<MissingIngredient[]>([]);
   const [loadingMissing, setLoadingMissing] = useState(false);
-
-  useEffect(() => {
-    if (devMode) {
-      loadMissingData();
-    }
-  }, [devMode]);
 
   const loadMissingData = useCallback(async () => {
     setLoadingMissing(true);
@@ -88,6 +84,12 @@ export default function ProfileScreen() {
       setLoadingMissing(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (devMode) {
+      loadMissingData();
+    }
+  }, [devMode, loadMissingData]);
 
   const handleVersionTap = useCallback(() => {
     const next = devTapCount + 1;
@@ -167,24 +169,52 @@ export default function ProfileScreen() {
         history,
       };
 
+      const jsonContent = JSON.stringify(exportData, null, 2);
+      const fileName = `cosmetic-scanner-backup-${exportData.exportDate}.json`;
+
       if (Platform.OS === 'web') {
-        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const blob = new Blob([jsonContent], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `cosmetic-scanner-backup-${exportData.exportDate}.json`;
+        a.download = fileName;
         a.click();
         URL.revokeObjectURL(url);
         Alert.alert('Экспорт', 'Файл скачан');
       } else {
         const FileSystem = await import('expo-file-system/legacy');
         const Sharing = await import('expo-sharing');
-        const fileName = `cosmetic-scanner-backup-${exportData.exportDate}.json`;
         const filePath = `${FileSystem.documentDirectory}${fileName}`;
-        await FileSystem.writeAsStringAsync(filePath, JSON.stringify(exportData, null, 2));
+        await FileSystem.writeAsStringAsync(filePath, jsonContent);
+
+        if (Platform.OS === 'android') {
+          try {
+            const SAF = FileSystem.StorageAccessFramework;
+            const permissions = await SAF.requestDirectoryPermissionsAsync();
+            if (permissions.granted) {
+              const safUri = await SAF.createFileAsync(
+                permissions.directoryUri,
+                fileName,
+                'application/json'
+              );
+              await FileSystem.writeAsStringAsync(safUri, jsonContent, {
+                encoding: FileSystem.EncodingType.UTF8,
+              });
+              Alert.alert('Экспорт', 'Файл сохранён в выбранную папку');
+              return;
+            }
+          } catch (safError) {
+            console.log('[Profile] SAF export failed, falling back to share:', safError);
+          }
+        }
+
         const canShare = await Sharing.isAvailableAsync();
         if (canShare) {
-          await Sharing.shareAsync(filePath);
+          await Sharing.shareAsync(filePath, {
+            mimeType: 'application/json',
+            dialogTitle: 'Сохранить бэкап',
+            UTI: 'public.json',
+          });
         } else {
           Alert.alert('Экспорт', 'Файл сохранён: ' + filePath);
         }
@@ -251,10 +281,19 @@ export default function ProfileScreen() {
       'Все настройки будут сброшены. Продолжить?',
       [
         { text: 'Отмена', style: 'cancel' },
-        { text: 'Сбросить', style: 'destructive', onPress: resetProfile },
+        {
+          text: 'Сбросить',
+          style: 'destructive',
+          onPress: () => {
+            resetProfile();
+            setTimeout(() => {
+              router.replace('/onboarding');
+            }, 100);
+          },
+        },
       ]
     );
-  }, [resetProfile]);
+  }, [resetProfile, router]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -390,7 +429,7 @@ export default function ProfileScreen() {
                     <Text style={[
                       styles.devButtonText,
                       missingCount === 0 && styles.devButtonTextDisabled,
-                    ]}>Экспортировать</Text>
+                    ]}>Экспорт</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity

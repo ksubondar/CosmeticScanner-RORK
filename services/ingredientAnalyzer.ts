@@ -96,6 +96,8 @@ async function lookupExternalSources(name: string): Promise<IngredientData | nul
 }
 
 function calculateOverallRating(ingredients: AnalyzedIngredient[]): { rating: OverallRating; text: string } {
+  const total = ingredients.length;
+  const unknownCount = ingredients.filter(i => i.isUnknown).length;
   const known = ingredients.filter(i => !i.isUnknown);
 
   if (known.length === 0) {
@@ -124,7 +126,12 @@ function calculateOverallRating(ingredients: AnalyzedIngredient[]): { rating: Ov
     return { rating: 'yellow', text: 'С осторожностью' };
   }
 
-  if (grayCount > greenCount) {
+  const knownRatio = known.length / total;
+  if (knownRatio < 0.4) {
+    return { rating: 'gray', text: 'Недостаточно данных' };
+  }
+
+  if (grayCount > greenCount && unknownCount <= total * 0.3) {
     return { rating: 'gray', text: 'Неэффективно' };
   }
 
@@ -213,7 +220,6 @@ export async function analyzeCompositionAsync(
   const unknownIndices: number[] = [];
   const ingredients: AnalyzedIngredient[] = [];
   const originalNames: string[] = [];
-  let processedCount = 0;
 
   for (let i = 0; i < ingredientNames.length; i++) {
     const name = ingredientNames[i];
@@ -231,22 +237,17 @@ export async function analyzeCompositionAsync(
       unknownIndices.push(i);
     }
 
-    processedCount++;
-    if (onProgress && unknownIndices.length === 0) {
-      onProgress(processedCount, totalCount);
+    if (onProgress) {
+      onProgress(i + 1, totalCount);
     }
-  }
-
-  if (onProgress) {
-    onProgress(ingredientNames.length - unknownIndices.length, totalCount);
   }
 
   console.log('[Analyzer] Local DB found:', ingredientNames.length - unknownIndices.length, '/', totalCount);
   console.log('[Analyzer] Unknown locally:', unknownIndices.length);
 
   if (unknownIndices.length > 0) {
-    const BATCH_SIZE = 10;
-    const localFound = ingredientNames.length - unknownIndices.length;
+    const BATCH_SIZE = 5;
+    let externalProcessed = 0;
 
     for (let b = 0; b < unknownIndices.length; b += BATCH_SIZE) {
       const batch = unknownIndices.slice(b, b + BATCH_SIZE);
@@ -265,12 +266,11 @@ export async function analyzeCompositionAsync(
           const original = originalNames[idx];
           ingredients[idx] = buildAnalyzedIngredient(original, res.value, profile);
         }
+        externalProcessed++;
+        if (onProgress) {
+          onProgress(totalCount - unknownIndices.length + externalProcessed, totalCount);
+        }
       });
-
-      if (onProgress) {
-        const done = localFound + Math.min(b + BATCH_SIZE, unknownIndices.length);
-        onProgress(done, totalCount);
-      }
     }
 
     const stillUnknown = unknownIndices.filter(idx => ingredients[idx].isUnknown);
